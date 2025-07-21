@@ -1,8 +1,8 @@
 require("dotenv").config();
 const { App } = require("@slack/bolt");
-const { loadParticipants, saveParticipants } = require("./utils/participantStore");
+const { loadParticipants, saveParticipants } = require("../src/utils/memberStore");
 const { v4: uuidv4 } = require('uuid');
-const { TEAM_OPTIONS } = require("./config");
+const { TEAM_OPTIONS } = require("../src/config");
 
 const app = new App({
     token: process.env.SLACK_BOT_TOKEN,
@@ -16,11 +16,14 @@ function buildBlocks(participants) {
 
     // 참여자 수정용 블록 (team, name, status)
     blocks.push(
-        ...participants.flatMap((p) => [
+        ...participants.flatMap((p, index) => [
             {
                 type: "input",
                 block_id: `${p.id}_name`,
-                label: { type: "plain_text", text: "이름" },
+                label: {
+                    type: "plain_text",
+                    text: `멤버 ${index + 1}`,
+                },
                 element: {
                     type: "plain_text_input",
                     action_id: "name_input",
@@ -63,35 +66,42 @@ function buildBlocks(participants) {
                             value: p.isActive ? "true" : "false",
                         },
                     },
+                    {
+                        type: "button",
+                        text: {
+                            type: "plain_text",
+                            text: "🗑 삭제",
+                            emoji: true,
+                        },
+                        style: "danger",
+                        value: p.id,
+                        action_id: "delete_member",
+                        confirm: { // 삭제 확인 팝업 추가 가능
+                            title: {
+                                type: "plain_text",
+                                text: "삭제 확인",
+                            },
+                            text: {
+                                type: "plain_text",
+                                text: `${p.name}님을 삭제하시겠습니까?`,
+                            },
+                            confirm: {
+                                type: "plain_text",
+                                text: "삭제",
+                            },
+                            deny: {
+                                type: "plain_text",
+                                text: "취소",
+                            },
+                        },
+                    },
                 ],
-            }
+            },
+            {
+                "type": "divider"
+            },
         ])
     );
-
-    // 삭제할 참여자 선택 (선택 사항)
-    blocks.push({
-        type: "section",
-        block_id: "delete_participants_block",
-        text: {
-            type: "mrkdwn",
-            text: "*삭제할 참여자 선택 (선택 사항)*",
-        },
-        accessory: {
-            type: "multi_static_select",
-            action_id: "delete_participants_select",
-            placeholder: {
-                type: "plain_text",
-                text: "참여자 선택",
-            },
-            options: participants.map((p) => ({
-                text: {
-                    type: "plain_text",
-                    text: p.name || "(이름 없음)",
-                },
-                value: p.id,
-            })),
-        },
-    });
 
     // 하단 버튼
     blocks.push({
@@ -103,30 +113,6 @@ function buildBlocks(participants) {
                 action_id: "add_participant",
                 text: { type: "plain_text", text: "참여자 추가" },
                 style: "primary",
-            },
-            {
-                type: "button",
-                action_id: "delete_selected_participants",
-                text: { type: "plain_text", text: "선택 삭제" },
-                style: "danger",
-                confirm: {
-                    title: {
-                        type: "plain_text",
-                        text: "삭제 확인",
-                    },
-                    text: {
-                        type: "plain_text",
-                        text: "선택한 참여자를 삭제하시겠습니까?",
-                    },
-                    confirm: {
-                        type: "plain_text",
-                        text: "삭제",
-                    },
-                    deny: {
-                        type: "plain_text",
-                        text: "취소",
-                    },
-                },
             },
         ],
     });
@@ -151,30 +137,60 @@ function shuffle(array) {
     }
 }
 
-// 조 편성 함수: 팀별 골고루 섞기
 function makeGroups(participants, groupSize) {
+    const total = participants.length;
+    const numGroups = Math.ceil(total / groupSize);
+    const groups = Array.from({ length: numGroups }, () => []);
     const teamsMap = {};
-    participants.forEach(p => {
+
+    // 팀별 분류
+    for (const p of participants) {
         if (!teamsMap[p.team]) teamsMap[p.team] = [];
         teamsMap[p.team].push(p);
-    });
+    }
 
-    Object.values(teamsMap).forEach(teamArr => shuffle(teamArr));
+    // 팀별로 섞기
+    Object.values(teamsMap).forEach(shuffle);
 
-    const numGroups = Math.ceil(participants.length / groupSize);
-    const groups = Array.from({ length: numGroups }, () => []);
-
+    // 1차 분배: 각 팀에서 한 명씩 라운드로빈으로 각 조에 넣기
     let groupIndex = 0;
-    const teamArrays = Object.values(teamsMap);
-    let teamsLeft = true;
+    for (const team in teamsMap) {
+        const teamMembers = teamsMap[team];
+        while (teamMembers.length > 0) {
+            groups[groupIndex % numGroups].push(teamMembers.pop());
+            groupIndex++;
+        }
+    }
 
-    while (teamsLeft) {
-        teamsLeft = false;
-        for (const teamArr of teamArrays) {
-            if (teamArr.length > 0) {
-                groups[groupIndex].push(teamArr.pop());
-                groupIndex = (groupIndex + 1) % numGroups;
-                teamsLeft = true;
+    // 2차 체크: 특정 조에 특정 팀이 하나도 없을 경우, 인접 조에서 교환
+    const groupTeams = groups.map(group =>
+        new Set(group.map(p => p.team))
+    );
+
+    for (let i = 0; i < numGroups; i++) {
+        const missingTeams = Object.keys(teamsMap).filter(
+            team => !groupTeams[i].has(team)
+        );
+
+        for (const team of missingTeams) {
+            for (let j = 0; j < numGroups; j++) {
+                if (i === j) continue;
+                const donorIndex = groups[j].findIndex(p => p.team === team);
+                const recipientIndex = groups[i].findIndex(p => {
+                    return groupTeams[j].has(p.team) &&
+                        !groupTeams[i].has(p.team);
+                });
+
+                if (donorIndex >= 0 && recipientIndex >= 0) {
+                    // swap
+                    const temp = groups[j][donorIndex];
+                    groups[j][donorIndex] = groups[i][recipientIndex];
+                    groups[i][recipientIndex] = temp;
+
+                    // 업데이트 team sets
+                    groupTeams[i].add(team);
+                    break;
+                }
             }
         }
     }
@@ -231,6 +247,32 @@ app.action('add_participant', async ({ ack, body, client }) => {
             title: { type: 'plain_text', text: '참여자 관리' },
             submit: { type: 'plain_text', text: '저장' },
             close: { type: 'plain_text', text: '취소' },
+            blocks,
+        },
+    });
+});
+
+app.action("delete_member", async ({ ack, body, client }) => {
+    await ack();
+
+    const deleteId = body.actions[0].value; // 버튼 value에 participant id 있음
+
+    let participants = loadParticipants();
+    participants = participants.filter((p) => p.id !== deleteId);
+
+    saveParticipants(participants);
+
+    const blocks = buildBlocks(participants);
+
+    await client.views.update({
+        view_id: body.view.id,
+        hash: body.view.hash,
+        view: {
+            type: "modal",
+            callback_id: "manage_participants",
+            title: { type: "plain_text", text: "참여자 관리" },
+            submit: { type: "plain_text", text: "저장" },
+            close: { type: "plain_text", text: "취소" },
             blocks,
         },
     });
@@ -304,7 +346,7 @@ app.view("manage_participants", async ({ ack, view, body, client }) => {
     try {
         await client.chat.postMessage({
             channel: channelId,
-            text: `✅ ${editor}님에 의해 참여자 정보가 저장되었습니다.\n현재 참여 인원: *${activeCount}명*`,
+            text: `✅ ${editor} 님이 침여자 정보를 변경했습니다.\n• 현재 참여 인원: *${activeCount}명*`,
         });
     } catch (error) {
         console.error("💥 메시지 전송 실패:", error);
@@ -316,8 +358,11 @@ app.view("manage_participants", async ({ ack, view, body, client }) => {
 app.command("/점심조뽑기", async ({ ack, body, client }) => {
     await ack();
 
-    const participants = loadParticipants().filter((p) => p.isActive);
-    if (participants.length === 0) {
+    const allParticipants = loadParticipants();
+    const activeParticipants = allParticipants.filter((p) => p.isActive);
+    const inactiveParticipants = allParticipants.filter((p) => !p.isActive);
+
+    if (activeParticipants.length === 0) {
         await client.chat.postEphemeral({
             channel: body.channel_id,
             user: body.user_id,
@@ -326,9 +371,15 @@ app.command("/점심조뽑기", async ({ ack, body, client }) => {
         return;
     }
 
-    const participantListText = participants
+    const activeListText = activeParticipants
         .map((p) => `• ${p.name} (${p.team})`)
         .join("\n");
+
+    const inactiveListText = inactiveParticipants.length > 0
+        ? inactiveParticipants
+              .map((p) => `• ${p.name} (${p.team})`)
+              .join("\n")
+        : "_없음_";
 
     await client.views.open({
         trigger_id: body.trigger_id,
@@ -344,13 +395,20 @@ app.command("/점심조뽑기", async ({ ack, body, client }) => {
                     type: "section",
                     text: {
                         type: "mrkdwn",
-                        text: `*참여자 (${participants.length}명)*\n${participantListText}`,
+                        text: `*✅ 참여자 (${activeParticipants.length}명)*\n${activeListText}`,
+                    },
+                },
+                {
+                    type: "section",
+                    text: {
+                        type: "mrkdwn",
+                        text: `*🚫 미참여자 (${inactiveParticipants.length}명)*\n${inactiveListText}`,
                     },
                 },
                 {
                     type: "input",
                     block_id: "group_size_block",
-                    label: { type: "plain_text", text: "조 인원수" },
+                    label: { type: "plain_text", text: "팀 사이즈" },
                     element: {
                         type: "plain_text_input",
                         action_id: "group_size_input",
@@ -371,7 +429,7 @@ app.view("draw_groups_modal", async ({ ack, view, client }) => {
     const groupSize = parseInt(groupSizeStr, 10);
 
     if (isNaN(groupSize) || groupSize <= 0) {
-        console.log("잘못된 조 인원수 입력:", groupSizeStr);
+        console.log("잘못된 팀 사이즈 입력:", groupSizeStr);
         return;
     }
 
@@ -380,13 +438,15 @@ app.view("draw_groups_modal", async ({ ack, view, client }) => {
 
     const now = new Date();
     const dateStr = `[${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}]`;
-    let text = `*${dateStr} 점심 조 편성 결과* (조 인원수: ${groupSize})\n`;
+    let text = `*${dateStr} 점심 조 편성 결과* (팀 사이즈: ${groupSize})\n`;
     groups.forEach((group, i) => {
         text += `\n*조 ${i + 1}* (${group.length}명)\n`;
         group.forEach((p) => {
             text += `• ${p.name} (${p.team})\n`;
         });
     });
+
+    text += `\n맛점하세요~ (오늘의 점심메뉴는~? 🍣🍕🍜🍖🍝)`;
 
     const channelId = view.private_metadata;
 
