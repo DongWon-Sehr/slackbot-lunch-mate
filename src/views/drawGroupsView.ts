@@ -26,7 +26,7 @@ export default function drawGroupsView(app: App) {
     let text = `*${dateStr} 점심 조 편성 결과* (팀 사이즈: ${groupSize})\n`;
 
     groups.forEach((group, i) => {
-      text += `\n*조 ${i + 1}* (${group.length}명)\n`;
+      text += `\n*${i + 1} 조* (${group.length}명)\n`;
       group.forEach((p) => {
         text += `• ${p.name} (${p.team})\n`;
       });
