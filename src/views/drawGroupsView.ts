@@ -1,6 +1,7 @@
 import { App } from "@slack/bolt";
 import { loadMembers } from "../utils/memberStore";
 import { makeGroups } from "../utils/groupMaker";
+import { TEAM_EMOJIS, TeamName } from "../config";
 
 export default function drawGroupsView(app: App) {
   app.view("draw_groups_modal", async ({ ack, view, client }) => {
@@ -28,7 +29,7 @@ export default function drawGroupsView(app: App) {
     groups.forEach((group, i) => {
       text += `\n*${i + 1} 조* (${group.length}명)\n`;
       group.forEach((p) => {
-        text += `• ${p.name} (${p.team})\n`;
+        text += `• ${TEAM_EMOJIS[p.team as TeamName]} ${p.name}\n`;
       });
     });
 

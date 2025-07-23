@@ -1,5 +1,6 @@
 import { App } from "@slack/bolt";
 import { loadMembers } from "../utils/memberStore";
+import { TEAM_EMOJIS, TeamName } from "../config";
 
 export default function drawGroupsCommand(app: App) {
   app.command("/점심조뽑기", async ({ ack, body, client }) => {
@@ -19,12 +20,12 @@ export default function drawGroupsCommand(app: App) {
     }
 
     const activeListText = activeMembers
-      .map((p) => `• ${p.name} (${p.team})`)
+      .map((p) => `• ${TEAM_EMOJIS[p.team as TeamName]} ${p.name}`)
       .join("\n");
 
     const inactiveListText =
       inactiveMembers.length > 0
-        ? inactiveMembers.map((p) => `• ${p.name} (${p.team})`).join("\n")
+        ? inactiveMembers.map((p) => `• ${TEAM_EMOJIS[p.team as TeamName]} ${p.name}`).join("\n")
         : "_없음_";
 
     await client.views.open({
