@@ -9,3 +9,7 @@ export const TEAM_EMOJIS: Record<TeamName, string> = {
   "개발 1본부": "🤹🏻",
   "개발 2본부": "⛹🏻‍♀️",
 };
+
+export const FOOD_EMOJIS = [
+  "🍣", "🍕", "🍜", "🍖", "🍝", "🥘", "🍲", "🌭", "🥪", "🌮", "🌯", "🥙", "🥡", "🍛", "🍱", "🥟", "🥗", "🐷", "🐓", "🐟",
+] as const;

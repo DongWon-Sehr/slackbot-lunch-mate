@@ -1,7 +1,8 @@
-import { App, SlackAction } from "@slack/bolt";
+import { App } from "@slack/bolt";
 import { loadMembers, saveMembers } from "../utils/memberStore";
 import { v4 as uuidv4 } from "uuid";
 import buildBlocks from "../views/manageMembersView";
+import { TEAM_OPTIONS } from "../config/index"
 
 export default function addMemberAction(app: App) {
   app.action("add_member", async ({ ack, body, client }) => {
@@ -13,7 +14,7 @@ export default function addMemberAction(app: App) {
     members.push({
       id: uuidv4(),
       name: "",
-      team: "개발1팀",
+      team: TEAM_OPTIONS[0],
       isActive: true,
     });
 
