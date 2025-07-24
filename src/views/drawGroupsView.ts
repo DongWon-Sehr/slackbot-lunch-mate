@@ -35,7 +35,7 @@ export default function drawGroupsView(app: App) {
       });
     });
 
-    text += `\n<@${process.env.SLACK_BOT_USER_ID || ''}>의 <오추메> 는 바로~ ${getRandomFoodEmoji()} (맛점하세요😋)`;
+    text += `\n<@${process.env.SLACK_BOT_USER_ID || ''}>의 <오추메> 는 ${getRandomFoodEmoji()} 입니다.\n점심 메이트와 같이 상의해봐요. (맛점하세요😋)`;
 
     const channelId = view.private_metadata!;
 
